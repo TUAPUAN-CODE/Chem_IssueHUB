@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ระบบพิมพ์สติกเกอร์ชั่งส่วนผสม (จากไฟล์ Stock คงเหลือ)</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          corporate: {
+            50: '#f0f9ff', 100: '#e0f2fe', 200: '#bae6fd', 300: '#7dd3fc',
+            400: '#38bdf8', 500: '#0ea5e9', 600: '#0284c7', 700: '#0369a1',
+            800: '#075985', 900: '#0c4a6e'
+          }
+        },
+        fontFamily: { sans: ['"Prompt"', 'sans-serif'] }
+      }
+    }
+  }
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Prompt', sans-serif; }
+  ::-webkit-scrollbar { height: 12px; width: 12px; }
+  ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; border: 3px solid #f1f5f9; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+</style>
+</head>
+<body class="bg-corporate-50 text-gray-800 min-h-screen flex flex-col">
+
+<main class="flex-grow max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900 tracking-tight">ระบบพิมพ์สติกเกอร์ชั่งส่วนผสม</h1>
+    <p class="text-sm text-gray-500 mt-1">อ่านไฟล์ Stock คงเหลือส่วนผสมประจำวัน (.xlsb / .xlsx) แล้วสร้างสติกเกอร์ตามรูปแบบเทปติดกระสอบ/ถัง — 1 แผ่นตัดแบ่งได้ 4 ชิ้น</p>
+  </div>
+
+  <div id="message-box" class="hidden mb-6 p-4 rounded-lg flex items-center gap-3">
+    <i id="message-icon" class="text-2xl"></i>
+    <span id="message-text" class="font-medium"></span>
+  </div>
+
+  <!-- Upload -->
+  <div class="bg-white p-6 rounded-xl shadow-sm border border-corporate-100 mb-6">
+    <div class="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-corporate-500 hover:bg-corporate-50 transition cursor-pointer relative" id="drop-zone">
+      <input type="file" id="excel-file" accept=".xlsb,.xlsx,.xls" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+      <i class="ph ph-file-xls text-4xl text-corporate-500 mb-2"></i>
+      <h3 class="text-base font-semibold text-gray-700">ลากไฟล์ .xlsb / .xlsx มาวาง หรือคลิกเพื่อเลือกไฟล์</h3>
+      <p class="text-sm text-gray-500 mt-1">รองรับไฟล์ Stock คงเหลือส่วนผสมประจำวัน (มีหลายชีต)</p>
+      <p id="file-name-display" class="mt-3 text-corporate-600 font-medium hidden"></p>
+    </div>
+  </div>
+
+  <!-- Sheet select -->
+  <div id="sheet-select-panel" class="hidden bg-white p-4 rounded-xl shadow-sm border border-corporate-100 mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
+    <label for="sheet-select" class="text-sm font-semibold text-gray-700 flex items-center gap-2 shrink-0">
+      <i class="ph ph-stack text-corporate-600"></i> เลือกชีต
+    </label>
+    <select id="sheet-select" class="flex-1 bg-corporate-50 border border-gray-300 rounded-lg p-2.5 text-sm"></select>
+  </div>
+
+  <div id="sheet-status" class="hidden mb-6"></div>
+
+  <!-- Groups panel -->
+  <div id="groups-panel" class="hidden bg-white rounded-2xl shadow-sm ring-1 ring-gray-200/80 overflow-hidden mb-6">
+    <div class="px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <span class="w-9 h-9 rounded-xl bg-corporate-50 text-corporate-600 flex items-center justify-center text-lg">
+          <i class="ph-fill ph-clipboard-text"></i>
+        </span>
+        <h3 class="font-semibold text-base text-gray-900">1) เลือกงาน/ล็อตที่จะพิมพ์ (รหัสย่อ)</h3>
+        <span id="group-count" class="text-xs bg-gray-100 text-gray-600 py-1 px-3 rounded-full font-medium"></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <input id="group-search" type="text" placeholder="ค้นหารหัส เช่น NXH, TGG..." class="text-sm border border-gray-300 rounded-lg px-3 py-2 w-56">
+        <button id="btn-groups-select-all" class="text-xs text-gray-600 border border-gray-200 bg-white hover:bg-gray-50 px-3 py-2 rounded-lg font-medium">เลือกทั้งหมด</button>
+        <button id="btn-groups-select-none" class="text-xs text-gray-500 border border-gray-200 bg-white hover:bg-gray-50 px-3 py-2 rounded-lg font-medium">ล้างการเลือก</button>
+      </div>
+    </div>
+    <div class="overflow-x-auto max-h-80">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 sticky top-0">
+          <tr class="text-left text-gray-600">
+            <th class="px-4 py-2 w-8"></th>
+            <th class="px-4 py-2">รหัสย่อ (แสดงบนสติกเกอร์)</th>
+            <th class="px-4 py-2">รหัสงาน</th>
+            <th class="px-4 py-2">รายละเอียด</th>
+            <th class="px-4 py-2 text-right">จำนวนชุด</th>
+            <th class="px-4 py-2 text-center">หน่วย นน./ชุด</th>
+            <th class="px-4 py-2 text-right">จำนวนส่วนผสมที่มีน้ำหนัก</th>
+          </tr>
+        </thead>
+        <tbody id="groups-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Ingredients panel -->
+  <div id="ingredients-panel" class="hidden bg-white rounded-2xl shadow-sm ring-1 ring-gray-200/80 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="w-9 h-9 rounded-xl bg-corporate-50 text-corporate-600 flex items-center justify-center text-lg">
+          <i class="ph-fill ph-table"></i>
+        </span>
+        <h3 class="font-semibold text-base text-gray-900">2) เลือกส่วนผสมที่จะพิมพ์สติกเกอร์</h3>
+        <span id="ingredient-count" class="text-xs bg-gray-100 text-gray-600 py-1 px-3 rounded-full font-medium"></span>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <label for="opt-per-unit" class="text-xs text-gray-600 font-medium">หน่วย นน./ชุด</label>
+        <select id="opt-per-unit" class="text-xs border border-gray-300 rounded-lg px-2 py-2 bg-white">
+          <option value="AUTO">AUTO (ตามแต่ละงาน)</option>
+          <option value="KG">KG ทุกงาน</option>
+          <option value="G">G ทุกงาน</option>
+        </select>
+        <button id="btn-ing-select-all" class="text-xs text-gray-600 border border-gray-200 bg-white hover:bg-gray-50 px-3 py-2 rounded-lg font-medium">เลือกทั้งหมด</button>
+        <button id="btn-ing-select-none" class="text-xs text-gray-500 border border-gray-200 bg-white hover:bg-gray-50 px-3 py-2 rounded-lg font-medium">ล้างการเลือก</button>
+        <button id="btn-print" class="bg-corporate-600 hover:bg-corporate-700 active:bg-corporate-800 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition flex items-center gap-2 shadow-sm">
+          <i class="ph-fill ph-printer text-lg"></i> พิมพ์สติกเกอร์ (4 ชิ้น/แผ่น)
+        </button>
+      </div>
+    </div>
+    <div class="overflow-x-auto max-h-[32rem]">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 sticky top-0">
+          <tr class="text-left text-gray-600">
+            <th class="px-4 py-2 w-8"></th>
+            <th class="px-2 py-2 w-10"></th>
+            <th class="px-4 py-2">รหัสย่อ</th>
+            <th class="px-4 py-2">ชื่อย่อส่วนผสม</th>
+            <th class="px-4 py-2">ชื่อเต็ม</th>
+            <th class="px-4 py-2 text-right">นน./ชุด <span class="per-unit-label">(KG/G)</span></th>
+            <th class="px-4 py-2 text-right">X จำนวนชุด</th>
+            <th class="px-4 py-2 text-right">นน.ที่ใช้ (รวม)</th>
+          </tr>
+        </thead>
+        <tbody id="ingredients-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Raw data table (full sheet, like the original tool) -->
+  <div id="raw-panel" class="hidden bg-white rounded-2xl shadow-sm ring-1 ring-gray-200/80 overflow-hidden mt-6">
+    <div class="px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <span class="w-9 h-9 rounded-xl bg-corporate-50 text-corporate-600 flex items-center justify-center text-lg">
+          <i class="ph-fill ph-table"></i>
+        </span>
+        <h3 class="font-semibold text-base text-gray-900">ตารางแสดงข้อมูลดิบทั้งหมดในชีตนี้</h3>
+        <span id="raw-count" class="text-xs bg-gray-100 text-gray-600 py-1 px-3 rounded-full font-medium"></span>
+      </div>
+    </div>
+    <div class="overflow-auto max-h-[36rem]">
+      <table class="min-w-full text-xs border-collapse">
+        <thead id="raw-thead" class="bg-gray-50 sticky top-0 z-10"></thead>
+        <tbody id="raw-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<script>
+(function () {
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('excel-file');
+  const fileNameDisplay = document.getElementById('file-name-display');
+  const sheetSelectPanel = document.getElementById('sheet-select-panel');
+  const sheetSelect = document.getElementById('sheet-select');
+  const sheetStatus = document.getElementById('sheet-status');
+  const groupsPanel = document.getElementById('groups-panel');
+  const groupsTbody = document.getElementById('groups-tbody');
+  const groupCountEl = document.getElementById('group-count');
+  const groupSearch = document.getElementById('group-search');
+  const ingredientsPanel = document.getElementById('ingredients-panel');
+  const ingredientsTbody = document.getElementById('ingredients-tbody');
+  const ingredientCountEl = document.getElementById('ingredient-count');
+  const rawPanel = document.getElementById('raw-panel');
+  const rawThead = document.getElementById('raw-thead');
+  const rawTbody = document.getElementById('raw-tbody');
+  const rawCountEl = document.getElementById('raw-count');
+  let globalSheetData = null; // full array-of-arrays for the current sheet, for the raw table
+
+  let globalWorkbook = null;
+  let globalLayout = null;      // detected matrix layout for the current sheet
+  let globalEntries = [];       // all ingredient x group entries with nonzero weight, for current sheet
+  let selectedGroupKeys = new Set();
+  let selectedEntryIds = new Set();
+
+  function showMessage(type, text) {
+    const box = document.getElementById('message-box');
+    const icon = document.getElementById('message-icon');
+    const txt = document.getElementById('message-text');
+    const styles = {
+      error: ['bg-red-50 text-red-700 border border-red-100', 'ph-fill ph-x-circle'],
+      warning: ['bg-amber-50 text-amber-700 border border-amber-100', 'ph-fill ph-warning'],
+      success: ['bg-emerald-50 text-emerald-700 border border-emerald-100', 'ph-fill ph-check-circle'],
+      info: ['bg-corporate-50 text-corporate-700 border border-corporate-100', 'ph-fill ph-info']
+    };
+    const [cls, iconCls] = styles[type] || styles.info;
+    box.className = 'mb-6 p-4 rounded-lg flex items-center gap-3 ' + cls;
+    icon.className = iconCls + ' text-2xl';
+    txt.textContent = text;
+  }
+
+  function escapeHtml(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function toNumber(v) {
+    if (typeof v === 'number') return v;
+    if (v == null || v === '') return NaN;
+    const n = parseFloat(String(v).replace(/,/g, ''));
+    return isNaN(n) ? NaN : n;
+  }
+
+  function fmt3(n) {
+    const v = toNumber(n);
+    return isNaN(v) ? '-' : v.toFixed(3);
+  }
+
+  // หน่วยของ "นน./ชุด" (ข้อมูลในไฟล์เป็น KG): KG = เหมือนเดิม, G = x 1,000
+  // perUnit: 'AUTO' = ใช้หน่วยของแต่ละแถว/งาน | 'KG' / 'G' = บังคับทุกแถว
+  let perUnit = 'AUTO';
+  function unitOf(e) { return perUnit === 'AUTO' ? (e.unit || e.group.unit) : perUnit; }
+  // แสดงค่าตามที่อยู่ในไฟล์ทุกประการ (ไม่ปัด ไม่เติมศูนย์ ไม่แปลงหน่วย) แค่ติดป้ายหน่วย KG/G แยกต่างหาก
+  function fmtW(n, unit) {
+    const v = toNumber(n);
+    return isNaN(v) ? '-' : String(v);
+  }
+  function fmtPer(n, unit) { return fmtW(n, unit); }
+
+  // ล้างค่าที่แก้ไว้กลับเป็นค่าจากไฟล์ (นน./ชุด, จำนวนชุด, นน.รวม, หน่วย) — ใช้ตอนติ๊กออก/ล้างการเลือก
+  // ข้อความที่ผู้ใช้พิมพ์เอง (perText/usedText/countText) จะถูกแสดงและพิมพ์ตามที่พิมพ์ทุกตัวอักษร ไม่ปัด ไม่ตัดทศนิยม
+  function showPer(e)   { return e.perText   != null ? e.perText   : fmtW(e.weightPerSet, unitOf(e)); }
+  function showUsed(e)  { return e.usedText  != null ? e.usedText  : fmtW(e.weightUsed, unitOf(e)); }
+  function showCount(e) { return e.countText != null ? e.countText : fmtCount(e.count); }
+  function resetEntry(e) {
+    e.perText = null; e.usedText = null; e.countText = null;
+    e.weightPerSet = e.origPer;
+    e.count = e.group.count;
+    e.weightUsed = e.origUsed;
+    e.usedManual = false;
+    e.unit = null;
+  }
+  function resetGroup(g) {
+    g.count = g.origCount;
+    g.countText = null;
+    g.unit = g.unitAuto;
+    globalEntries.forEach(e => { if (e.group === g) resetEntry(e); });
+  }
+
+  function fmtCount(n) {
+    const v = toNumber(n);
+    if (isNaN(v)) return '-';
+    return String(v);
+  }
+
+  // ---------- File loading ----------
+  ['dragover', 'dragleave', 'drop'].forEach(evt => {
+    dropZone.addEventListener(evt, (e) => e.preventDefault());
+  });
+  dropZone.addEventListener('drop', (e) => {
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      fileInput.files = e.dataTransfer.files;
+      handleFileSelect({ target: fileInput });
+    }
+  });
+  fileInput.addEventListener('change', handleFileSelect);
+
+  function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    fileNameDisplay.textContent = 'ไฟล์: ' + file.name;
+    fileNameDisplay.classList.remove('hidden');
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        globalWorkbook = XLSX.read(data, { type: 'array', cellDates: false, raw: true });
+        populateSheetSelect();
+      } catch (err) {
+        console.error(err);
+        showMessage('error', 'ไม่สามารถอ่านไฟล์นี้ได้: ' + (err && err.message ? err.message : String(err)));
+      }
+    };
+    reader.onerror = function () {
+      showMessage('error', 'เกิดข้อผิดพลาดขณะอ่านไฟล์');
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function populateSheetSelect() {
+    sheetSelect.innerHTML = '';
+    // ใช้เฉพาะชีตสรุปน้ำหนักตามสูตร (DS/NS) ตามที่ต้องการ — ถ้าไม่พบชื่อนี้เลย ให้ fallback แสดงทุกชีต
+    const targetSheets = globalWorkbook.SheetNames.filter(name => name.includes('รวมน้ำหนักตามสูตร'));
+    const namesToShow = targetSheets.length > 0 ? targetSheets : globalWorkbook.SheetNames;
+    namesToShow.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sheetSelect.appendChild(opt);
+    });
+    sheetSelectPanel.classList.remove('hidden');
+    // เลือกชีต DS เป็นค่าเริ่มต้นถ้ามี ไม่งั้นเลือกอันแรกที่แสดง
+    const dsSheet = namesToShow.find(n => n.includes('(DS)')) || namesToShow[0];
+    sheetSelect.value = dsSheet;
+    loadSheet(sheetSelect.value);
+  }
+
+  sheetSelect.addEventListener('change', () => loadSheet(sheetSelect.value));
+
+  // ---------- ตรวจหน่วยของแต่ละงาน (กรัม/กิโลกรัม) จากข้อความหัวคอลัมน์ ----------
+  // ลำดับ: 1) "เบิกเป็น g./กรัม" -> G | 2) มี kg -> KG | 3) มี "g." โดดๆ (ตัวพิมพ์เล็ก) -> G | 4) ไม่มีอะไรเลย -> KG
+  // ค่าตัวเลขใช้ตามที่อยู่ในไฟล์ ไม่แปลงหน่วย แค่ติดป้ายหน่วยตามที่ตรวจเจอ
+  function detectGroupUnit(texts) {
+    const t = texts.filter(x => x != null && x !== '').map(x => String(x)).join(' | ');
+    let m;
+    // 1) เบิกเป็น g / gram / กรัม (กรัม ที่ไม่ใช่ส่วนของ "กิโลกรัม")
+    if ((m = t.match(/เบิก\s*เป็น\s*(?:g|gm|gram)s?(?![A-Za-z])\.?/i)) ||
+        (m = t.match(/(?<!กิโล)กรัม/)) ||
+        (m = t.match(/(?<![A-Za-z])grams?(?![A-Za-z])/i)))
+      return { unit: 'G', why: '1) ' + m[0].trim() };
+    // 2) kg / kgs / กก. / กิโล / กิโลกรัม / kilogram
+    if ((m = t.match(/(?<![A-Za-z])(?:kgs?|kilograms?)(?![A-Za-z])\.?/i)) ||
+        (m = t.match(/กิโลกรัม|กิโล|กก\./)))
+      return { unit: 'KG', why: '2) ' + m[0].trim() };
+    // 3) "g." โดดๆ ตัวพิมพ์เล็ก ตามหลังตัวเลข/ช่องว่าง (ไม่นับรหัสสินค้าตัวพิมพ์ใหญ่ เช่น ...2G/)
+    if ((m = t.match(/(?<=[\d\s.,])(?:g|gm)\.?(?=\s|\||$)/)))
+      return { unit: 'G', why: '3) "' + m[0].trim() + '"' };
+    // 4) ไม่พบ -> KG
+    return { unit: 'KG', why: '4) ไม่พบหน่วย' };
+  }
+
+  // ---------- Matrix layout detection ----------
+  function detectMatrixLayout(data) {
+    const scanLimit = Math.min(data.length, 25);
+    let unitRow = -1;
+    for (let r = 0; r < scanLimit; r++) {
+      const row = data[r] || [];
+      let hits = 0;
+      for (let c = 0; c < row.length - 1; c++) {
+        if (String(row[c] == null ? '' : row[c]).trim() === 'นน./ชุด' &&
+            String(row[c + 1] == null ? '' : row[c + 1]).trim() === 'นน.ที่ใช้') hits++;
+      }
+      if (hits >= 2) { unitRow = r; break; }
+    }
+    if (unitRow === -1) return null;
+
+    let cntRow = -1;
+    for (let r = unitRow - 1; r >= Math.max(0, unitRow - 4); r--) {
+      const row = data[r] || [];
+      const hits = row.filter(v => String(v == null ? '' : v).trim() === 'จำนวนชุด').length;
+      if (hits >= 2) { cntRow = r; break; }
+    }
+
+    const searchStart = (cntRow !== -1 ? cntRow : unitRow) - 1;
+    let shortCodeRow = -1;
+    for (let r = searchStart; r >= Math.max(0, searchStart - 4); r--) {
+      const row = data[r] || [];
+      const hits = row.filter(v => typeof v === 'string' && v.includes('/')).length;
+      if (hits >= 2) { shortCodeRow = r; break; }
+    }
+    // Fall back to the structural offset (3 rows above the unit row) when no job codes are
+    // currently filled in for this sheet/date — the sheet is still a valid matrix layout,
+    // it just has zero active jobs right now.
+    if (shortCodeRow === -1) shortCodeRow = Math.max(0, unitRow - 3);
+
+    const descRow = shortCodeRow - 1;
+    const jobCodeRow = descRow - 1;
+
+    const metaRow = descRow >= 0 ? (data[descRow] || []) : [];
+    const findCol = (labelSubstr) => {
+      for (let c = 0; c < metaRow.length; c++) {
+        if (typeof metaRow[c] === 'string' && metaRow[c].includes(labelSubstr)) return c;
+      }
+      return -1;
+    };
+    const colName = findCol('ชื่อส่วนผสม') !== -1 ? findCol('ชื่อส่วนผสม') : 0;
+    let colShortName = -1;
+    for (let c = 0; c < metaRow.length; c++) {
+      if (typeof metaRow[c] === 'string' && metaRow[c].includes('ชื่อย่อ')) { colShortName = c; break; }
+    }
+    const colCode = findCol('รหัสส่วนผสม');
+    const colBatch = findCol('BATCH');
+    const colExp = findCol('วันหมดอายุ');
+
+    const unitRowArr = data[unitRow] || [];
+    const cntRowArr = cntRow !== -1 ? (data[cntRow] || []) : [];
+    const shortRowArr = data[shortCodeRow] || [];
+    const jobRowArr = jobCodeRow >= 0 ? (data[jobCodeRow] || []) : [];
+    const descRowArr = descRow >= 0 ? (data[descRow] || []) : [];
+
+    const groups = [];
+    for (let c = 0; c < unitRowArr.length - 1; c++) {
+      if (String(unitRowArr[c] == null ? '' : unitRowArr[c]).trim() === 'นน./ชุด' &&
+          String(unitRowArr[c + 1] == null ? '' : unitRowArr[c + 1]).trim() === 'นน.ที่ใช้') {
+        const shortCodeRaw = shortRowArr[c];
+        if (!shortCodeRaw || typeof shortCodeRaw !== 'string' || !shortCodeRaw.includes('/')) continue;
+        const shortCode = shortCodeRaw.trim();
+        const jobCodeRaw = jobRowArr[c];
+        const jobCode = (typeof jobCodeRaw === 'string') ? jobCodeRaw.trim() : (jobCodeRaw == null ? '' : String(jobCodeRaw));
+        const descRaw = descRowArr[c];
+        const description = (typeof descRaw === 'string') ? descRaw.trim() : (descRaw == null ? '' : String(descRaw));
+        const countVal = toNumber(cntRowArr[c + 1]);
+        const hints = [];
+        for (let r = 0; r < unitRow; r++) {
+          const hr = data[r] || [];
+          [c, c + 1].forEach(cc => { if (typeof hr[cc] === 'string') hints.push(hr[cc]); });
+        }
+        const det = detectGroupUnit(hints);
+        groups.push({
+          unit: det.unit,
+          unitAuto: det.unit,
+          unitWhy: det.why,
+          key: shortCode + '#' + c,
+          colWeightPerSet: c,
+          colWeightUsed: c + 1,
+          shortCode: shortCode,
+          prefix: shortCode.split('/')[0].trim(),
+          jobCode: jobCode,
+          description: description,
+          count: isNaN(countVal) ? 0 : countVal,
+          origCount: isNaN(countVal) ? 0 : countVal
+        });
+      }
+    }
+
+    return {
+      unitRow, cntRow, shortCodeRow, descRow, jobCodeRow,
+      colName, colShortName, colCode, colBatch, colExp,
+      dataStartRow: unitRow + 1,
+      groups
+    };
+  }
+
+  function buildEntries(data, layout) {
+    const entries = [];
+    let idCounter = 0;
+    for (let r = layout.dataStartRow; r < data.length; r++) {
+      const row = data[r] || [];
+      const name = layout.colName !== -1 ? row[layout.colName] : null;
+      if (name == null || String(name).trim() === '') continue;
+      const shortNameRaw = layout.colShortName !== -1 ? row[layout.colShortName] : null;
+      const shortName = (shortNameRaw == null || String(shortNameRaw).trim() === '') ? String(name).trim() : String(shortNameRaw).trim();
+      const code = layout.colCode !== -1 ? row[layout.colCode] : '';
+
+      layout.groups.forEach(g => {
+        const wPerSet = toNumber(row[g.colWeightPerSet]);
+        if (isNaN(wPerSet) || wPerSet === 0) return;
+        const wUsed = toNumber(row[g.colWeightUsed]);
+        entries.push({
+          id: 'e' + (idCounter++),
+          ingredientName: String(name).trim(),
+          shortName: shortName,
+          code: code,
+          group: g,
+          weightPerSet: wPerSet,
+          origPer: wPerSet,
+          unit: null,          // null = ตามหน่วยของงาน
+          usedManual: false,
+          count: g.count,
+          weightUsed: isNaN(wUsed) ? (wPerSet * g.count) : wUsed,
+          origUsed: isNaN(wUsed) ? (wPerSet * g.count) : wUsed
+        });
+      });
+    }
+    return entries;
+  }
+
+  function loadSheet(sheetName) {
+    groupsPanel.classList.add('hidden');
+    ingredientsPanel.classList.add('hidden');
+    rawPanel.classList.add('hidden');
+    sheetStatus.classList.add('hidden');
+    selectedGroupKeys = new Set();
+    selectedEntryIds = new Set();
+    removedIds.clear();
+
+    const worksheet = globalWorkbook.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: true });
+    globalSheetData = data;
+
+    const layout = detectMatrixLayout(data);
+    if (!layout) {
+      sheetStatus.classList.remove('hidden');
+      sheetStatus.innerHTML = '<div class="p-4 rounded-lg bg-amber-50 text-amber-700 border border-amber-100 text-sm">' +
+        '<i class="ph-fill ph-warning mr-1"></i> ชีตนี้ไม่ใช่รูปแบบตารางส่วนผสม/นน.ชุด ที่ระบบรองรับ กรุณาเลือกชีตอื่น</div>';
+      globalLayout = null;
+      globalEntries = [];
+      /* [RAW TABLE DISABLED] renderRawTable(data, null); */
+      /* [RAW TABLE DISABLED] rawPanel.classList.remove('hidden'); */
+      return;
+    }
+
+    globalLayout = layout;
+    globalEntries = buildEntries(data, layout);
+
+    sheetStatus.classList.remove('hidden');
+    if (layout.groups.length === 0) {
+      sheetStatus.innerHTML = '<div class="p-4 rounded-lg bg-amber-50 text-amber-700 border border-amber-100 text-sm">' +
+        '<i class="ph-fill ph-warning mr-1"></i> พบรูปแบบตารางที่รองรับ แต่ยังไม่มีรหัสงาน (เช่น NXH/100) ถูกกรอกไว้ในชีตนี้ ณ ตอนนี้ — ลองเลือกชีตอื่นหรือตรวจสอบวันที่ในไฟล์</div>';
+      groupsPanel.classList.add('hidden');
+      ingredientsPanel.classList.add('hidden');
+      /* [RAW TABLE DISABLED] renderRawTable(data, layout); */
+      /* [RAW TABLE DISABLED] rawPanel.classList.remove('hidden'); */
+      return;
+    }
+
+    sheetStatus.innerHTML = '<div class="p-4 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-100 text-sm">' +
+      '<i class="ph-fill ph-check-circle mr-1"></i> พบ ' + layout.groups.length + ' งาน/รหัสย่อ และ ' + globalEntries.length + ' รายการส่วนผสมที่มีน้ำหนัก</div>';
+
+    renderGroups();
+    groupsPanel.classList.remove('hidden');
+    renderIngredients();
+    ingredientsPanel.classList.remove('hidden');
+    /* [RAW TABLE DISABLED] renderRawTable(data, layout); */
+    /* [RAW TABLE DISABLED] rawPanel.classList.remove('hidden'); */
+  }
+
+  // ---------- Raw full-sheet table (shows every row/column, like the original tool) ----------
+  function renderRawTable(data, layout) {
+    if (!data || data.length === 0) {
+      rawThead.innerHTML = '';
+      rawTbody.innerHTML = '';
+      rawCountEl.textContent = '';
+      return;
+    }
+    const headerRowsCount = layout ? layout.dataStartRow : 1;
+
+    // หาคอลัมน์สุดท้ายที่มีข้อมูลจริง (ตัดคอลัมน์ว่างท้ายตารางทิ้ง เพื่อไม่ให้ตารางกว้างเกินไปโดยไม่มีประโยชน์)
+    let maxCol = -1;
+    for (let r = 0; r < data.length; r++) {
+      const row = data[r] || [];
+      for (let c = row.length - 1; c >= 0; c--) {
+        if (row[c] !== null && row[c] !== undefined && String(row[c]).trim() !== '') {
+          if (c > maxCol) maxCol = c;
+          break;
+        }
+      }
+    }
+    if (maxCol < 0) maxCol = 0;
+
+    // หาแถวสุดท้ายที่มีข้อมูลจริง
+    let maxRow = data.length - 1;
+    while (maxRow > headerRowsCount && (data[maxRow] || []).every(v => v === null || v === undefined || String(v).trim() === '')) {
+      maxRow--;
+    }
+
+    const buildColLabel = (colIdx) => {
+      const parts = [];
+      for (let r = 0; r < headerRowsCount; r++) {
+        const v = (data[r] || [])[colIdx];
+        if (v !== null && v !== undefined && String(v).trim() !== '') parts.push(String(v).trim());
+      }
+      return parts.length ? parts.join('<br>') : ('คอลัมน์ ' + (colIdx + 1));
+    };
+
+    let theadHtml = '<tr>';
+    for (let c = 0; c <= maxCol; c++) {
+      theadHtml += '<th class="px-2 py-2 border-b border-gray-200 text-left font-semibold text-gray-600 whitespace-nowrap bg-gray-50">' + buildColLabel(c) + '</th>';
+    }
+    theadHtml += '</tr>';
+    rawThead.innerHTML = theadHtml;
+
+    let bodyHtml = '';
+    for (let r = headerRowsCount; r <= maxRow; r++) {
+      const row = data[r] || [];
+      bodyHtml += '<tr class="' + (((r - headerRowsCount) % 2 === 1) ? 'bg-gray-50/60' : 'bg-white') + ' hover:bg-corporate-50/60">';
+      for (let c = 0; c <= maxCol; c++) {
+        let v = row[c];
+        let text;
+        if (v === null || v === undefined || v === '') {
+          text = '<span class="text-gray-300">-</span>';
+        } else if (typeof v === 'number') {
+          text = Number.isInteger(v) ? String(v) : v.toFixed(3);
+        } else {
+          text = escapeHtml(v);
+        }
+        bodyHtml += '<td class="px-2 py-1.5 border-b border-gray-50 whitespace-nowrap text-gray-700">' + text + '</td>';
+      }
+      bodyHtml += '</tr>';
+    }
+    rawTbody.innerHTML = bodyHtml;
+    rawCountEl.textContent = (maxRow - headerRowsCount + 1) + ' แถว x ' + (maxCol + 1) + ' คอลัมน์';
+  }
+
+  // ---------- Groups table ----------
+  function renderGroups() {
+    const filterText = groupSearch.value.trim().toLowerCase();
+    const countByGroup = {};
+    globalEntries.forEach(e => {
+      countByGroup[e.group.key] = (countByGroup[e.group.key] || 0) + 1;
+    });
+
+    const filtered = globalLayout.groups.filter(g => {
+      if (!filterText) return true;
+      return (g.shortCode + ' ' + g.jobCode + ' ' + g.description).toLowerCase().includes(filterText);
+    });
+
+    groupCountEl.textContent = filtered.length + ' / ' + globalLayout.groups.length + ' งาน';
+
+    groupsTbody.innerHTML = filtered.map(g => {
+      const checked = selectedGroupKeys.has(g.key) ? 'checked' : '';
+      const ingCount = countByGroup[g.key] || 0;
+      return `<tr class="border-t border-gray-100 hover:bg-gray-50">
+        <td class="px-4 py-2"><input type="checkbox" class="group-checkbox rounded border-gray-300 text-corporate-600 focus:ring-corporate-500" data-key="${escapeHtml(g.key)}" ${checked}></td>
+        <td class="px-4 py-2 font-semibold text-corporate-700">${escapeHtml(g.shortCode)}</td>
+        <td class="px-4 py-2 text-gray-600">${escapeHtml(g.jobCode)}</td>
+        <td class="px-4 py-2 text-gray-500">${escapeHtml(g.description)}</td>
+        <td class="px-4 py-2 text-right"><input type="number" min="0" step="any" class="group-count-input w-20 text-right border rounded-md px-2 py-1 text-sm ${g.count !== g.origCount ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}" data-key="${escapeHtml(g.key)}" value="${escapeHtml(g.countText != null ? g.countText : String(g.count))}" title="แก้จำนวนชุดของงานนี้ (ไม่กระทบช่องอื่น)"></td>
+        <td class="px-4 py-2 text-center"><select class="group-unit-select text-xs border rounded-md px-2 py-1 ${g.unit !== g.unitAuto ? 'border-amber-400 bg-amber-50' : 'border-gray-300 bg-white'}" data-key="${escapeHtml(g.key)}" title="${g.unit !== g.unitAuto ? 'แก้เอง' : 'ตรวจเจออัตโนมัติ'}">
+          <option value="KG" ${g.unit === 'KG' ? 'selected' : ''}>KG</option>
+          <option value="G" ${g.unit === 'G' ? 'selected' : ''}>G</option>
+        </select></td>
+        <td class="px-4 py-2 text-right">${ingCount}</td>
+      </tr>`;
+    }).join('');
+
+    groupsTbody.querySelectorAll('.group-unit-select').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const g = globalLayout.groups.find(x => x.key === sel.getAttribute('data-key'));
+        if (!g) return;
+        g.unit = sel.value === 'G' ? 'G' : 'KG';
+        const changed = g.unit !== g.unitAuto;
+        sel.classList.toggle('border-amber-400', changed);
+        sel.classList.toggle('bg-amber-50', changed);
+        sel.classList.toggle('border-gray-300', !changed);
+        sel.classList.toggle('bg-white', !changed);
+        renderIngredients();
+      });
+    });
+
+    groupsTbody.querySelectorAll('.group-count-input').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const g = globalLayout.groups.find(x => x.key === inp.getAttribute('data-key'));
+        if (!g) return;
+        const v = toNumber(inp.value);
+        if (isNaN(v) || v < 0) { inp.value = (g.countText != null ? g.countText : String(g.count)); return; }
+        g.count = v;
+        g.countText = inp.value.trim();
+        globalEntries.forEach(e => {
+          if (e.group === g) { e.count = v; e.countText = g.countText; }
+        });
+        inp.classList.toggle('border-amber-400', v !== g.origCount);
+        inp.classList.toggle('bg-amber-50', v !== g.origCount);
+        inp.classList.toggle('border-gray-300', v === g.origCount);
+        renderIngredients();
+      });
+    });
+
+    groupsTbody.querySelectorAll('.group-checkbox').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const key = cb.getAttribute('data-key');
+        if (cb.checked) selectedGroupKeys.add(key);
+        else {
+          selectedGroupKeys.delete(key);
+          const g = globalLayout.groups.find(x => x.key === key);
+          if (g) { resetGroup(g); renderGroups(); }
+        }
+        renderIngredients();
+      });
+    });
+  }
+
+  groupSearch.addEventListener('input', renderGroups);
+
+  document.getElementById('btn-groups-select-all').addEventListener('click', () => {
+    globalLayout.groups.forEach(g => selectedGroupKeys.add(g.key));
+    renderGroups();
+    renderIngredients();
+  });
+  document.getElementById('btn-groups-select-none').addEventListener('click', () => {
+    globalLayout.groups.forEach(resetGroup);
+    selectedGroupKeys.clear();
+    renderGroups();
+    renderIngredients();
+  });
+
+  // ---------- Ingredients table ----------
+  const removedIds = new Set(); // ids the user explicitly unchecked, so they stay unchecked on re-render
+
+  function renderIngredients() {
+    const visibleEntries = globalEntries.filter(e => selectedGroupKeys.has(e.group.key));
+    // drop selections for entries no longer visible (their group got unchecked)
+    selectedEntryIds = new Set([...selectedEntryIds].filter(id => visibleEntries.some(e => e.id === id)));
+    // default newly-visible entries to selected, unless the user had explicitly unchecked them before
+    visibleEntries.forEach(e => {
+      if (!selectedEntryIds.has(e.id) && !removedIds.has(e.id)) selectedEntryIds.add(e.id);
+    });
+
+    ingredientCountEl.textContent = visibleEntries.length + ' รายการ';
+
+    ingredientsTbody.innerHTML = visibleEntries.map(e => {
+      const checked = selectedEntryIds.has(e.id) ? 'checked' : '';
+      return `<tr class="border-t border-gray-100 hover:bg-gray-50">
+        <td class="px-4 py-2"><input type="checkbox" class="ing-checkbox rounded border-gray-300 text-corporate-600 focus:ring-corporate-500" data-id="${escapeHtml(e.id)}" ${checked}></td>
+        <td class="px-2 py-2">
+          <button type="button" class="ing-print-row bg-white border border-gray-200 hover:bg-corporate-600 hover:border-corporate-600 text-corporate-600 hover:text-white w-8 h-8 rounded-lg transition flex items-center justify-center" data-id="${escapeHtml(e.id)}" title="พิมพ์สติกเกอร์เฉพาะรายการนี้">
+            <i class="ph-fill ph-printer text-base"></i>
+          </button>
+        </td>
+        <td class="px-4 py-2 font-semibold text-corporate-700">${escapeHtml(e.group.prefix)}</td>
+        <td class="px-4 py-2">${escapeHtml(e.shortName)}</td>
+        <td class="px-4 py-2 text-gray-500">${escapeHtml(e.ingredientName)}</td>
+        <td class="px-4 py-2 text-right whitespace-nowrap">
+          <input type="text" inputmode="decimal" class="ing-per-input w-24 text-right border rounded-md px-2 py-1 text-sm ${e.weightPerSet !== e.origPer ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}" data-id="${escapeHtml(e.id)}" value="${escapeHtml(showPer(e))}">
+          <select class="ing-unit-select text-xs border rounded-md px-1 py-1 ${unitOf(e) === 'G' ? 'border-amber-400 bg-amber-50 text-amber-700 font-semibold' : 'border-gray-300 bg-white'}" data-id="${escapeHtml(e.id)}" ${perUnit !== 'AUTO' ? 'disabled' : ''}>
+            <option value="KG" ${unitOf(e) === 'KG' ? 'selected' : ''}>KG</option>
+            <option value="G" ${unitOf(e) === 'G' ? 'selected' : ''}>G</option>
+          </select>
+        </td>
+        <td class="px-4 py-2 text-right whitespace-nowrap">X <input type="number" min="0" step="any" class="ing-count-input w-20 text-right border rounded-md px-2 py-1 text-sm ${e.count !== e.group.origCount ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}" data-id="${escapeHtml(e.id)}" value="${escapeHtml(showCount(e))}"></td>
+        <td class="px-4 py-2 text-right whitespace-nowrap"><input type="text" inputmode="decimal" class="used-input w-28 text-right border rounded-md px-2 py-1 text-sm ${e.usedManual ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}" data-id="${escapeHtml(e.id)}" value="${escapeHtml(showUsed(e))}" title="แก้ได้อิสระ ไม่คำนวณจากช่องอื่น"> <span class="text-xs text-gray-400">${unitOf(e)}</span></td>
+      </tr>`;
+    }).join('');
+
+    ingredientsTbody.querySelectorAll('.ing-checkbox').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const id = cb.getAttribute('data-id');
+        if (cb.checked) { selectedEntryIds.add(id); removedIds.delete(id); }
+        else {
+          selectedEntryIds.delete(id); removedIds.add(id);
+          const en = globalEntries.find(x => x.id === id);
+          if (en) resetEntry(en);
+          renderIngredients();
+        }
+      });
+    });
+
+    ingredientsTbody.querySelectorAll('.ing-print-row').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        const entry = globalEntries.find(e => e.id === id);
+        if (entry) openPrintWindow([entry]);
+      });
+    });
+
+    const updateUsedCell = (e) => {
+      const c = ingredientsTbody.querySelector('.used-input[data-id="' + e.id + '"]');
+      if (c) {
+        c.value = showUsed(e);
+        c.classList.toggle('border-amber-400', e.usedManual);
+        c.classList.toggle('bg-amber-50', e.usedManual);
+        c.classList.toggle('border-gray-300', !e.usedManual);
+      }
+    };
+
+    ingredientsTbody.querySelectorAll('.ing-per-input').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const e = globalEntries.find(x => x.id === inp.getAttribute('data-id'));
+        if (!e) return;
+        const v = toNumber(inp.value);
+        if (isNaN(v) || v < 0) { inp.value = showPer(e); return; }
+        e.weightPerSet = v;
+        e.perText = inp.value.trim();
+        const changed = v !== e.origPer;
+        inp.classList.toggle('border-amber-400', changed);
+        inp.classList.toggle('bg-amber-50', changed);
+        inp.classList.toggle('border-gray-300', !changed);
+      });
+    });
+
+    ingredientsTbody.querySelectorAll('.used-input').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const e = globalEntries.find(x => x.id === inp.getAttribute('data-id'));
+        if (!e) return;
+        const v = toNumber(inp.value);
+        if (isNaN(v) || v < 0) { inp.value = showUsed(e); return; }
+        e.weightUsed = v;
+        e.usedText = inp.value.trim();
+        e.usedManual = true;
+        updateUsedCell(e);
+      });
+    });
+
+    ingredientsTbody.querySelectorAll('.ing-unit-select').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const e = globalEntries.find(x => x.id === sel.getAttribute('data-id'));
+        if (!e) return;
+        e.unit = sel.value === 'G' ? 'G' : 'KG';
+        renderIngredients();
+      });
+    });
+
+    ingredientsTbody.querySelectorAll('.ing-count-input').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const e = globalEntries.find(x => x.id === inp.getAttribute('data-id'));
+        if (!e) return;
+        const v = toNumber(inp.value);
+        if (isNaN(v) || v < 0) { inp.value = showCount(e); return; }
+        e.count = v;
+        e.countText = inp.value.trim();
+        const changed = v !== e.group.origCount;
+        inp.classList.toggle('border-amber-400', changed);
+        inp.classList.toggle('bg-amber-50', changed);
+        inp.classList.toggle('border-gray-300', !changed);
+      });
+    });
+
+  }
+
+  document.getElementById('opt-per-unit').addEventListener('change', (ev) => {
+    perUnit = ev.target.value === 'G' ? 'G' : (ev.target.value === 'KG' ? 'KG' : 'AUTO');
+    document.querySelectorAll('.per-unit-label').forEach(el => { el.textContent = perUnit === 'AUTO' ? '(KG/G)' : '(' + perUnit + ')'; });
+    renderIngredients();
+  });
+
+  document.getElementById('btn-ing-select-all').addEventListener('click', () => {
+    globalEntries.filter(e => selectedGroupKeys.has(e.group.key)).forEach(e => { selectedEntryIds.add(e.id); removedIds.delete(e.id); });
+    renderIngredients();
+  });
+  document.getElementById('btn-ing-select-none').addEventListener('click', () => {
+    globalEntries.filter(e => selectedGroupKeys.has(e.group.key)).forEach(e => { selectedEntryIds.delete(e.id); removedIds.add(e.id); resetEntry(e); });
+    renderIngredients();
+  });
+
+  // ---------- Print ----------
+  // ขนาด tag จริง: 4.5cm × 3.5cm, padding 2mm 3mm
+  // พื้นที่ใช้งานกว้าง = 4.5cm - 6mm = ~39mm ≈ 110px ที่ 72dpi
+  // ใช้ SVG textLength เพื่อบังคับให้ข้อความพอดีกับความกว้าง ไม่ล้น ไม่ตัด ทั้ง screen และ print
+
+  const TAG_W_MM = 39;   // ความกว้างพื้นที่ข้อความในสติกเกอร์ (mm) หลังหัก padding
+  const TAG_FONT_MIN = 6.5;   // ขนาดฟอนต์เล็กสุด (ข้อความยาวมาก)
+  const TAG_FONT_MAX = 13;    // ขนาดฟอนต์ใหญ่สุด (ข้อความสั้น)
+  const TAG_FONT_FAMILY = "'Tahoma', sans-serif";
+
+  // หาขนาดฟอนต์ที่ "พอดี" ที่สุดสำหรับสติกเกอร์ 1 ใบ โดยดูจากบรรทัดที่ยาวที่สุดใน 3 บรรทัด
+  // ข้อความสั้น → ฟอนต์ใหญ่ขึ้น (ไม่เกิน MAX), ข้อความยาว → ฟอนต์เล็กลง (ไม่ต่ำกว่า MIN) เพื่อไม่ให้ล้น
+  function computeFontSize(texts, maxW_mm, minPt, maxPt) {
+    let size = maxPt;
+    texts.forEach(t => {
+      if (!t) return;
+      const natural = maxW_mm / (t.length * 0.3528 * 0.65);
+      if (natural < size) size = natural;
+    });
+    return Math.max(minPt, Math.min(maxPt, size));
+  }
+
+  // สร้าง SVG text row ที่บังคับความกว้างไม่เกิน maxW_mm
+  // ถ้าข้อความสั้น → textLength = ความยาวจริง (ไม่ stretch)
+  // ถ้าข้อความยาว → textLength = maxW_mm (compress ให้พอดี)
+  function svgTextRow(parts, maxW_mm, fontSize_pt) {
+    // parts = [{text, bold?}]  รวมกันเป็น 1 row
+    const fullText = parts.map(p => p.text).join('  ');
+    const escText = fullText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    // ประมาณความยาวข้อความ (mm): ตัวอักษรเฉลี่ย ~0.65 * fontSize_pt * 0.3528 mm/pt
+    const estimatedW = fullText.length * fontSize_pt * 0.3528 * 0.65;
+    const usedW = Math.min(estimatedW, maxW_mm);
+    const tl = usedW.toFixed(2);
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${maxW_mm}mm" height="${(fontSize_pt * 0.3528 * 1.4).toFixed(2)}mm" style="display:block;overflow:visible">
+  <text x="0" y="${(fontSize_pt * 0.3528 * 1.1).toFixed(2)}mm"
+    font-family=${TAG_FONT_FAMILY} font-size="${fontSize_pt}pt" font-weight="700" fill="#000"
+    textLength="${tl}mm" lengthAdjust="spacingAndGlyphs"
+  >${escText}</text>
+</svg>`;
+  }
+
+  function buildTagHtml(e) {
+    const name   = e.shortName;
+    const jobTag = e.group.prefix;
+    const ingCode = e.code == null ? '' : String(e.code).trim();
+    const u0     = unitOf(e);
+    const used   = showUsed(e) + (u0 === 'G' ? ' G' : '');
+    const u      = unitOf(e);
+    const per    = showPer(e) + (u === 'G' ? ' G' : '');
+    const cnt    = 'X ' + showCount(e);
+
+    // 3 บรรทัดเสมอ: รหัสงาน+นน.รวม / ชื่อย่อ+รหัสส่วนผสม / นน./ชุด X จำนวน
+    // ขนาดฟอนต์ปรับอัตโนมัติตามความยาวข้อความของทั้ง 3 บรรทัด (สั้น = ใหญ่ขึ้น, ยาว = เล็กลง)
+    const text1 = jobTag + '  ' + used;
+    const text2 = ingCode ? (name + '  ' + ingCode) : name;
+    const text3 = per + '  ' + cnt;
+    const fontSize = computeFontSize([text1, text2, text3], TAG_W_MM, TAG_FONT_MIN, TAG_FONT_MAX);
+
+    const row1 = svgTextRow([{text: text1}], TAG_W_MM, fontSize);
+    const row2 = svgTextRow([{text: text2}], TAG_W_MM, fontSize);
+    const row3 = svgTextRow([{text: text3}], TAG_W_MM, fontSize);
+    return `<div class="tag"><div class="tag-inner">${row1}${row2}${row3}</div></div>`;
+  }
+
+  function openPrintWindow(entriesToPrint) {
+    if (!entriesToPrint || entriesToPrint.length === 0) {
+      showMessage('warning', 'กรุณาเลือกงานและส่วนผสมอย่างน้อย 1 รายการก่อนพิมพ์');
+      return;
+    }
+
+    const tagCards = entriesToPrint.map(buildTagHtml);
+
+    // pad to a multiple of 4 with EMPTY cells (not duplicated tags), so the sheet still cuts into 4 pieces
+    while (tagCards.length % 4 !== 0) tagCards.push('<div class="tag tag-empty"></div>');
+
+    let pagesHtml = '';
+    for (let i = 0; i < tagCards.length; i += 4) {
+      pagesHtml += `<div class="print-page">${tagCards.slice(i, i + 4).join('')}</div>`;
+    }
+
+    const printHtml = `<!DOCTYPE html>
+<html lang="th"><head><meta charset="UTF-8">
+<title>พิมพ์สติกเกอร์ชั่งส่วนผสม</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  @page { size: 9cm 7cm; margin: 0; }
+  html, body {
+    width: 9cm;
+    margin: 0 !important; padding: 0 !important;
+    font-family: 'Tahoma', sans-serif;
+  }
+  @media print {
+    html, body { width: 9cm; margin: 0 !important; padding: 0 !important; }
+  }
+  .print-page {
+    width: 9cm; height: 7cm;
+    display: grid;
+    grid-template-columns: 4.5cm 4.5cm;
+    grid-template-rows: 3.5cm 3.5cm;
+    page-break-after: always; break-after: page;
+  }
+  .print-page:last-child { page-break-after: auto; break-after: auto; }
+  .tag {
+    width: 4.5cm; height: 3.5cm;
+    border: 1px dashed #999;
+    overflow: hidden;
+  }
+  .tag.tag-empty { background: transparent; }
+  .tag-inner {
+    width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 1mm;
+    padding: 2mm 3mm;
+  }
+  @media print { .tag { border-color: #bbb; } }
+</style>
+</head>
+<body>
+  ${pagesHtml}
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); window.close(); }, 300);
+    };
+  <\/script>
+</body></html>`;
+
+    const pw = window.open('', '_blank');
+    if (!pw) {
+      showMessage('warning', 'เบราว์เซอร์บล็อกหน้าต่างพิมพ์ (Pop-up Blocked) กรุณาอนุญาตป๊อปอัพสำหรับหน้านี้แล้วลองอีกครั้ง');
+      return;
+    }
+    pw.document.write(printHtml);
+    pw.document.close();
+  }
+
+  document.getElementById('btn-print').addEventListener('click', () => {
+    const toPrint = globalEntries.filter(e => selectedGroupKeys.has(e.group.key) && selectedEntryIds.has(e.id));
+    openPrintWindow(toPrint);
+  });
+
+})();
+</script>
+</body>
+</html>
