@@ -5,27 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ระบบพิมพ์สติกเกอร์ชั่งส่วนผสม (จากไฟล์ Stock คงเหลือ)</title>
 
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://unpkg.com/@phosphor-icons/web"></script>
-
-<script>
-  tailwind.config = {
-    theme: {
-      extend: {
-        colors: {
-          corporate: {
-            50: '#f0f9ff', 100: '#e0f2fe', 200: '#bae6fd', 300: '#7dd3fc',
-            400: '#38bdf8', 500: '#0ea5e9', 600: '#0284c7', 700: '#0369a1',
-            800: '#075985', 900: '#0c4a6e'
-          }
-        },
-        fontFamily: { sans: ['"Prompt"', 'sans-serif'] }
-      }
-    }
-  }
-</script>
-<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="data:,">
+    <meta name="description" content="ระบบพิมพ์สติกเกอร์ชั่งส่วนผสม (จากไฟล์ Stock คงเหลือ)">
+    <meta name="color-scheme" content="light">
+    <!-- ไลบรารีทั้งหมดอยู่ใน vendor/ (ไม่พึ่งอินเทอร์เน็ต) — build CSS ใหม่ด้วย npm run build:css -->
+    <link rel="stylesheet" href="/vendor/tailwind.css">
+    <link rel="stylesheet" href="/vendor/fonts/prompt.css">
+    <link rel="stylesheet" href="/vendor/phosphor/regular.css">
+    <link rel="stylesheet" href="/vendor/phosphor/fill.css">
+    <script src="/vendor/xlsx.full.min.js"></script>
 <style>
   body { font-family: 'Prompt', sans-serif; }
   ::-webkit-scrollbar { height: 12px; width: 12px; }
