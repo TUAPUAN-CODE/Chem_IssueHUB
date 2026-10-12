@@ -216,16 +216,38 @@
     return isNaN(v) ? '-' : v.toFixed(3);
   }
 
-  // หน่วยของ "นน./ชุด" (ข้อมูลในไฟล์เป็น KG): KG = เหมือนเดิม, G = x 1,000
+  // หน่วยของ "นน./ชุด" (ข้อมูลในไฟล์เป็น KG): KG = เหมือนเดิม, G = x 10,000 + ใส่ , คั่นหลักพัน
   // perUnit: 'AUTO' = ใช้หน่วยของแต่ละแถว/งาน | 'KG' / 'G' = บังคับทุกแถว
   let perUnit = 'AUTO';
   function unitOf(e) { return perUnit === 'AUTO' ? (e.unit || e.group.unit) : perUnit; }
-  // แสดงค่าตามที่อยู่ในไฟล์ทุกประการ (ไม่ปัด ไม่เติมศูนย์ ไม่แปลงหน่วย) แค่ติดป้ายหน่วย KG/G แยกต่างหาก
+  const G_MULTIPLIER = 10000;
+  function addThousandsCommas(numStr) {
+    const neg = numStr.startsWith('-');
+    if (neg) numStr = numStr.slice(1);
+    const [intPart, decPart] = numStr.split('.');
+    const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return (neg ? '-' : '') + withCommas + (decPart ? '.' + decPart : '');
+  }
+  // แสดงค่าตามที่อยู่ในไฟล์ทุกประการ (ไม่ปัด ไม่เติมศูนย์ ไม่แปลงหน่วยของ KG) แค่ติดป้ายหน่วย KG/G แยกต่างหาก
+  // ยกเว้นหน่วย G: คูณ 10,000 (ปรับให้แสดงเป็นหน่วยกรัมจริง) และใส่ , คั่นหลักพันเมื่อค่าเกิน 1,000
   function fmtW(n, unit) {
     const v = toNumber(n);
-    return isNaN(v) ? '-' : String(v);
+    if (isNaN(v)) return '-';
+    if (unit === 'G') {
+      const g = Math.round(v * G_MULTIPLIER * 1e6) / 1e6;
+      let s = g.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+      if (s === '' || s === '-0') s = '0';
+      return addThousandsCommas(s);
+    }
+    return String(v);
   }
   function fmtPer(n, unit) { return fmtW(n, unit); }
+  // แปลงค่าที่พิมพ์กลับ (แสดงผลหน่วย G ถูกคูณ 10,000 ไว้) ให้กลับเป็นสเกลดิบของไฟล์ก่อนบันทึก
+  function parseWInput(text, unit) {
+    const v = toNumber(text);
+    if (isNaN(v)) return NaN;
+    return unit === 'G' ? v / G_MULTIPLIER : v;
+  }
 
   // ล้างค่าที่แก้ไว้กลับเป็นค่าจากไฟล์ (นน./ชุด, จำนวนชุด, นน.รวม, หน่วย) — ใช้ตอนติ๊กออก/ล้างการเลือก
   // ข้อความที่ผู้ใช้พิมพ์เอง (perText/usedText/countText) จะถูกแสดงและพิมพ์ตามที่พิมพ์ทุกตัวอักษร ไม่ปัด ไม่ตัดทศนิยม
@@ -748,7 +770,7 @@
       inp.addEventListener('change', () => {
         const e = globalEntries.find(x => x.id === inp.getAttribute('data-id'));
         if (!e) return;
-        const v = toNumber(inp.value);
+        const v = parseWInput(inp.value, unitOf(e));
         if (isNaN(v) || v < 0) { inp.value = showPer(e); return; }
         e.weightPerSet = v;
         e.perText = inp.value.trim();
@@ -763,7 +785,7 @@
       inp.addEventListener('change', () => {
         const e = globalEntries.find(x => x.id === inp.getAttribute('data-id'));
         if (!e) return;
-        const v = toNumber(inp.value);
+        const v = parseWInput(inp.value, unitOf(e));
         if (isNaN(v) || v < 0) { inp.value = showUsed(e); return; }
         e.weightUsed = v;
         e.usedText = inp.value.trim();
