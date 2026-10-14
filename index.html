@@ -228,8 +228,18 @@
     const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     return (neg ? '-' : '') + withCommas + (decPart ? '.' + decPart : '');
   }
-  // แสดงค่าตามที่อยู่ในไฟล์ทุกประการ (ไม่ปัด ไม่เติมศูนย์ ไม่แปลงหน่วยของ KG) แค่ติดป้ายหน่วย KG/G แยกต่างหาก
+  // เติมศูนย์ท้ายทศนิยมให้ครบขั้นต่ำ (ไม่ปัด ไม่ตัดทศนิยมที่มีอยู่จริงถ้ามากกว่าขั้นต่ำ)
+  function padMinDecimals(v, minDecimals) {
+    let s = String(v);
+    if (s.includes('e') || s.includes('E')) s = v.toFixed(Math.max(minDecimals, 6));
+    const dot = s.indexOf('.');
+    if (dot === -1) return s + '.' + '0'.repeat(minDecimals);
+    const decLen = s.length - dot - 1;
+    return decLen >= minDecimals ? s : s + '0'.repeat(minDecimals - decLen);
+  }
+  // แสดงค่าตามที่อยู่ในไฟล์ทุกประการ (ไม่ปัด ไม่ตัดทศนิยม ไม่แปลงหน่วยของ KG) แค่ติดป้ายหน่วย KG/G แยกต่างหาก
   // ยกเว้นหน่วย G: คูณ 10,000 (ปรับให้แสดงเป็นหน่วยกรัมจริง) และใส่ , คั่นหลักพันเมื่อค่าเกิน 1,000
+  // หน่วย KG: เติมศูนย์ท้ายให้ครบอย่างน้อย 3 ตำแหน่งทศนิยม (เช่น 0.11 -> 0.110)
   function fmtW(n, unit) {
     const v = toNumber(n);
     if (isNaN(v)) return '-';
@@ -239,7 +249,7 @@
       if (s === '' || s === '-0') s = '0';
       return addThousandsCommas(s);
     }
-    return String(v);
+    return padMinDecimals(v, 3);
   }
   function fmtPer(n, unit) { return fmtW(n, unit); }
   // แปลงค่าที่พิมพ์กลับ (แสดงผลหน่วย G ถูกคูณ 10,000 ไว้) ให้กลับเป็นสเกลดิบของไฟล์ก่อนบันทึก
