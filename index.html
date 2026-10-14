@@ -216,10 +216,11 @@
     return isNaN(v) ? '-' : v.toFixed(3);
   }
 
-  // หน่วยของ "นน./ชุด" เป็นแค่ป้ายกำกับ (KG/G) ไม่มีการคูณ/แปลงค่าใดๆ — แสดงค่าตามไฟล์ตรงๆ เสมอ
+  // หน่วยของ "นน./ชุด" (ข้อมูลในไฟล์เป็น KG): KG = เหมือนเดิม, G = x 1,000
   // perUnit: 'AUTO' = ใช้หน่วยของแต่ละแถว/งาน | 'KG' / 'G' = บังคับทุกแถว
   let perUnit = 'AUTO';
   function unitOf(e) { return perUnit === 'AUTO' ? (e.unit || e.group.unit) : perUnit; }
+  const G_MULTIPLIER = 1000;
   function addThousandsCommas(numStr) {
     const neg = numStr.startsWith('-');
     if (neg) numStr = numStr.slice(1);
@@ -227,40 +228,39 @@
     const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     return (neg ? '-' : '') + withCommas + (decPart ? '.' + decPart : '');
   }
-  // เติมศูนย์ท้ายทศนิยมให้ครบขั้นต่ำ (ไม่ปัด ไม่ตัดทศนิยมที่มีอยู่จริงถ้ามากกว่าขั้นต่ำ) ทำงานบน string ล้วนๆ
-  // เพื่อไม่ต้องผ่าน Number() ซ้ำ ซึ่งจะทำให้เลข 0 ท้ายทศนิยมที่มีความหมาย (ตามไฟล์) หายไป
-  function padDecimalsStr(numStr, minDecimals) {
-    const dot = numStr.indexOf('.');
-    if (dot === -1) return numStr + '.' + '0'.repeat(minDecimals);
-    const decLen = numStr.length - dot - 1;
-    return decLen >= minDecimals ? numStr : numStr + '0'.repeat(minDecimals - decLen);
+  // เติมศูนย์ท้ายทศนิยมให้ครบขั้นต่ำ (ไม่ปัด ไม่ตัดทศนิยมที่มีอยู่จริงถ้ามากกว่าขั้นต่ำ)
+  function padMinDecimals(v, minDecimals) {
+    let s = String(v);
+    if (s.includes('e') || s.includes('E')) s = v.toFixed(Math.max(minDecimals, 6));
+    const dot = s.indexOf('.');
+    if (dot === -1) return s + '.' + '0'.repeat(minDecimals);
+    const decLen = s.length - dot - 1;
+    return decLen >= minDecimals ? s : s + '0'.repeat(minDecimals - decLen);
   }
-  // จัดรูปข้อความตัวเลข (string) สำหรับแสดงผล: เติมศูนย์ขั้นต่ำ 3 ตำแหน่ง + ใส่ , คั่นหลักพัน ไม่แตะทศนิยมเดิม
-  function formatWeightText(rawText) {
-    let s = String(rawText).trim().replace(/,/g, '');
-    const neg = s.startsWith('-');
-    if (neg) s = s.slice(1);
-    if (!/^\d+(\.\d+)?$/.test(s)) return (neg ? '-' : '') + s; // ข้อความไม่ใช่ตัวเลขล้วน แสดงตามที่มี
-    s = padDecimalsStr(s, 3);
-    s = addThousandsCommas(s);
-    return (neg ? '-' : '') + s;
-  }
-  // กรณีไม่มีข้อความต้นฉบับจากไฟล์ (เช่นค่าที่คำนวณขึ้นเอง) ใช้ตัวเลข float ที่มีอยู่แทน
+  // แสดงค่าตามไฟล์เต็มความละเอียด (ตัวเลขดิบจาก xlsx ไม่ถูกตัดทศนิยมโดยฟอร์แมตเซลล์ใน Excel)
+  // หน่วย KG: แสดงตรงตามไฟล์ + เติมศูนย์ขั้นต่ำ 3 ตำแหน่งทศนิยม
+  // หน่วย G: คูณ 1,000 (แปลงจากสเกล KG ในไฟล์เป็นกรัมจริง) + เติมศูนย์ขั้นต่ำ 3 ตำแหน่ง + ใส่ , คั่นหลักพันเมื่อเกิน 1,000
   function fmtW(n, unit) {
     const v = toNumber(n);
     if (isNaN(v)) return '-';
-    return formatWeightText(String(v));
+    const scaled = unit === 'G' ? v * G_MULTIPLIER : v;
+    // ปัดเศษความคลาดเคลื่อนจากการคูณเลขทศนิยมใน floating point (เช่น 0.34484*1000) โดยไม่ตัดทศนิยมที่มีความหมายจริง
+    const cleaned = Math.round(scaled * 1e8) / 1e8;
+    const s = padMinDecimals(cleaned, 3);
+    return addThousandsCommas(s);
   }
   function fmtPer(n, unit) { return fmtW(n, unit); }
+  // แปลงค่าที่พิมพ์กลับ (แสดงผลหน่วย G ถูกคูณ 1,000 ไว้) ให้กลับเป็นสเกลดิบของไฟล์ก่อนบันทึก
   function parseWInput(text, unit) {
-    return toNumber(text);
+    const v = toNumber(text);
+    if (isNaN(v)) return NaN;
+    return unit === 'G' ? v / G_MULTIPLIER : v;
   }
 
   // ล้างค่าที่แก้ไว้กลับเป็นค่าจากไฟล์ (นน./ชุด, จำนวนชุด, นน.รวม, หน่วย) — ใช้ตอนติ๊กออก/ล้างการเลือก
   // ข้อความที่ผู้ใช้พิมพ์เอง (perText/usedText/countText) จะถูกแสดงและพิมพ์ตามที่พิมพ์ทุกตัวอักษร ไม่ปัด ไม่ตัดทศนิยม
-  // ไม่มี perText/usedText ของผู้ใช้ -> ใช้ข้อความต้นฉบับจากไฟล์ (perRawText/usedRawText) ถ้ามี เพื่อคงทศนิยมครบตามไฟล์จริง
-  function showPer(e)   { return e.perText   != null ? e.perText   : (e.perRawText  != null ? formatWeightText(e.perRawText)  : fmtW(e.weightPerSet, unitOf(e))); }
-  function showUsed(e)  { return e.usedText  != null ? e.usedText  : (e.usedRawText != null ? formatWeightText(e.usedRawText) : fmtW(e.weightUsed, unitOf(e))); }
+  function showPer(e)   { return e.perText   != null ? e.perText   : fmtW(e.weightPerSet, unitOf(e)); }
+  function showUsed(e)  { return e.usedText  != null ? e.usedText  : fmtW(e.weightUsed, unitOf(e)); }
   function showCount(e) { return e.countText != null ? e.countText : fmtCount(e.count); }
   function resetEntry(e) {
     e.perText = null; e.usedText = null; e.countText = null;
@@ -474,12 +474,9 @@
       const code = layout.colCode !== -1 ? row[layout.colCode] : '';
 
       layout.groups.forEach(g => {
-        const perCell = row[g.colWeightPerSet];
-        const wPerSet = toNumber(perCell);
+        const wPerSet = toNumber(row[g.colWeightPerSet]);
         if (isNaN(wPerSet) || wPerSet === 0) return;
-        const usedCell = row[g.colWeightUsed];
-        const wUsed = toNumber(usedCell);
-        const usedIsFromFile = !isNaN(wUsed);
+        const wUsed = toNumber(row[g.colWeightUsed]);
         entries.push({
           id: 'e' + (idCounter++),
           ingredientName: String(name).trim(),
@@ -488,14 +485,11 @@
           group: g,
           weightPerSet: wPerSet,
           origPer: wPerSet,
-          // ข้อความต้นฉบับจากไฟล์ (เก็บทศนิยมครบตามที่ไฟล์แสดง ไว้ใช้แสดงผลแทนตัวเลขที่ถูกแปลงแล้ว)
-          perRawText: (perCell != null && String(perCell).trim() !== '') ? String(perCell).trim() : null,
-          usedRawText: usedIsFromFile ? String(usedCell).trim() : null,
           unit: null,          // null = ตามหน่วยของงาน
           usedManual: false,
           count: g.count,
-          weightUsed: usedIsFromFile ? wUsed : (wPerSet * g.count),
-          origUsed: usedIsFromFile ? wUsed : (wPerSet * g.count)
+          weightUsed: isNaN(wUsed) ? (wPerSet * g.count) : wUsed,
+          origUsed: isNaN(wUsed) ? (wPerSet * g.count) : wUsed
         });
       });
     }
@@ -512,9 +506,10 @@
     removedIds.clear();
 
     const worksheet = globalWorkbook.Sheets[sheetName];
-    // raw: false - ใช้ข้อความที่ฟอร์แมตตามรูปแบบตัวเลขของเซลล์ (เก็บทศนิยมครบตามที่เห็นในไฟล์ Excel จริง
-    // แทนค่า float ที่ JS แปลงแล้วอาจตัดเลข 0 ท้ายทศนิยมทิ้งไป)
-    const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
+    // raw: true - ใช้ค่าตัวเลขดิบ (float เต็มความละเอียด) ไม่ใช่ข้อความที่ฟอร์แมตตามรูปแบบการแสดงผลของเซลล์
+    // (เซลล์ในไฟล์มักตั้งฟอร์แมตแสดงผลแค่ 4 ตำแหน่งทศนิยม ทำให้ raw: false ได้ค่าที่ถูกตัดทอน
+    // เช่น 0.34484 ที่เก็บจริงในไฟล์ จะกลายเป็นข้อความ "0.3448" ถ้าใช้ raw: false)
+    const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: true });
     globalSheetData = data;
 
     const layout = detectMatrixLayout(data);
