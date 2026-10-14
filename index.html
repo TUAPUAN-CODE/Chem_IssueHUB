@@ -239,14 +239,15 @@
   }
   // แสดงค่าตามไฟล์เต็มความละเอียด (ตัวเลขดิบจาก xlsx ไม่ถูกตัดทศนิยมโดยฟอร์แมตเซลล์ใน Excel)
   // หน่วย KG: แสดงตรงตามไฟล์ + เติมศูนย์ขั้นต่ำ 3 ตำแหน่งทศนิยม
-  // หน่วย G: คูณ 1,000 (แปลงจากสเกล KG ในไฟล์เป็นกรัมจริง) + เติมศูนย์ขั้นต่ำ 3 ตำแหน่ง + ใส่ , คั่นหลักพันเมื่อเกิน 1,000
+  // หน่วย G: คูณ 1,000 (แปลงจากสเกล KG ในไฟล์เป็นกรัมจริง) + ใส่ , คั่นหลักพันเมื่อเกิน 1,000
+  // (ไม่เติมศูนย์ขั้นต่ำสำหรับหน่วย G — แสดงตามค่าจริงที่คำนวณได้ เช่น 344.84 ไม่ใช่ 344.840)
   function fmtW(n, unit) {
     const v = toNumber(n);
     if (isNaN(v)) return '-';
     const scaled = unit === 'G' ? v * G_MULTIPLIER : v;
     // ปัดเศษความคลาดเคลื่อนจากการคูณเลขทศนิยมใน floating point (เช่น 0.34484*1000) โดยไม่ตัดทศนิยมที่มีความหมายจริง
     const cleaned = Math.round(scaled * 1e8) / 1e8;
-    const s = padMinDecimals(cleaned, 3);
+    const s = unit === 'G' ? String(cleaned) : padMinDecimals(cleaned, 3);
     return addThousandsCommas(s);
   }
   function fmtPer(n, unit) { return fmtW(n, unit); }
