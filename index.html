@@ -102,6 +102,7 @@
         <span id="ingredient-count" class="text-xs bg-gray-100 text-gray-600 py-1 px-3 rounded-full font-medium"></span>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
+        <input id="ingredient-search" type="text" placeholder="ค้นหารหัส/ชื่อ เช่น CW4, CHOL..." class="text-sm border border-gray-300 rounded-lg px-3 py-2 w-56">
         <label for="opt-per-unit" class="text-xs text-gray-600 font-medium">หน่วย นน./ชุด</label>
         <select id="opt-per-unit" class="text-xs border border-gray-300 rounded-lg px-2 py-2 bg-white">
           <option value="AUTO">AUTO (ตามแต่ละงาน)</option>
@@ -170,6 +171,7 @@
   const ingredientsPanel = document.getElementById('ingredients-panel');
   const ingredientsTbody = document.getElementById('ingredients-tbody');
   const ingredientCountEl = document.getElementById('ingredient-count');
+  const ingredientSearch = document.getElementById('ingredient-search');
   const rawPanel = document.getElementById('raw-panel');
   const rawThead = document.getElementById('raw-thead');
   const rawTbody = document.getElementById('raw-tbody');
@@ -712,6 +714,13 @@
   // ---------- Ingredients table ----------
   const removedIds = new Set(); // ids the user explicitly unchecked, so they stay unchecked on re-render
 
+  // กรองตามช่องค้นหา (รหัสย่อ/รหัสงาน/ชื่อย่อ/ชื่อเต็ม/รหัสส่วนผสม) — ซ่อนแค่การแสดงผล ไม่ล้างการเลือกของแถวที่ถูกซ่อน
+  function filterIngredients(entries) {
+    const filterText = ingredientSearch.value.trim().toLowerCase();
+    if (!filterText) return entries;
+    return entries.filter(e => (e.group.shortCode + ' ' + e.group.jobCode + ' ' + e.shortName + ' ' + e.ingredientName + ' ' + (e.code == null ? '' : e.code)).toLowerCase().includes(filterText));
+  }
+
   function renderIngredients() {
     const visibleEntries = globalEntries.filter(e => selectedGroupKeys.has(e.group.key));
     // drop selections for entries no longer visible (their group got unchecked)
@@ -721,9 +730,10 @@
       if (!selectedEntryIds.has(e.id) && !removedIds.has(e.id)) selectedEntryIds.add(e.id);
     });
 
-    ingredientCountEl.textContent = visibleEntries.length + ' รายการ';
+    const shownEntries = filterIngredients(visibleEntries);
+    ingredientCountEl.textContent = shownEntries.length + ' / ' + visibleEntries.length + ' รายการ';
 
-    ingredientsTbody.innerHTML = visibleEntries.map(e => {
+    ingredientsTbody.innerHTML = shownEntries.map(e => {
       const checked = selectedEntryIds.has(e.id) ? 'checked' : '';
       return `<tr class="border-t border-gray-100 hover:bg-gray-50">
         <td class="px-4 py-2"><input type="checkbox" class="ing-checkbox rounded border-gray-300 text-corporate-600 focus:ring-corporate-500" data-id="${escapeHtml(e.id)}" ${checked}></td>
@@ -838,12 +848,15 @@
     renderIngredients();
   });
 
+  ingredientSearch.addEventListener('input', renderIngredients);
+
+  // เลือกทั้งหมด/ล้างการเลือก มีผลเฉพาะแถวที่แสดงอยู่ตามคำค้นหา
   document.getElementById('btn-ing-select-all').addEventListener('click', () => {
-    globalEntries.filter(e => selectedGroupKeys.has(e.group.key)).forEach(e => { selectedEntryIds.add(e.id); removedIds.delete(e.id); });
+    filterIngredients(globalEntries.filter(e => selectedGroupKeys.has(e.group.key))).forEach(e => { selectedEntryIds.add(e.id); removedIds.delete(e.id); });
     renderIngredients();
   });
   document.getElementById('btn-ing-select-none').addEventListener('click', () => {
-    globalEntries.filter(e => selectedGroupKeys.has(e.group.key)).forEach(e => { selectedEntryIds.delete(e.id); removedIds.add(e.id); resetEntry(e); });
+    filterIngredients(globalEntries.filter(e => selectedGroupKeys.has(e.group.key))).forEach(e => { selectedEntryIds.delete(e.id); removedIds.add(e.id); resetEntry(e); });
     renderIngredients();
   });
 
@@ -985,8 +998,9 @@
     pw.document.close();
   }
 
+  // พิมพ์เฉพาะแถวที่ติ๊กและแสดงอยู่ตามคำค้นหา (ตรงกับที่เห็นในตาราง)
   document.getElementById('btn-print').addEventListener('click', () => {
-    const toPrint = globalEntries.filter(e => selectedGroupKeys.has(e.group.key) && selectedEntryIds.has(e.id));
+    const toPrint = filterIngredients(globalEntries.filter(e => selectedGroupKeys.has(e.group.key) && selectedEntryIds.has(e.id)));
     openPrintWindow(toPrint);
   });
 
